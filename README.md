@@ -9,6 +9,7 @@ This repository is a public, data-safe walkthrough of wind power monthly point f
 - `src/wind_power_baselines/`: small functional utilities for cleaning, preprocessing, power curve construction, baseline prediction, metrics, and plots.
 - `data_sample/`: synthetic sample data only.
 - `results_public/`: anonymized real evaluation results. Absolute energy values are not published.
+- `figures/`: public-safe PNG figures rendered from sample data, anonymized real metrics, and local real intermediate outputs.
 
 ## Data Safety
 
@@ -23,6 +24,30 @@ Public results use normalized indices and percentages:
 - `pearson_r`
 
 No original kWh/GWh series, local drive paths, credentials, or raw station files are included.
+
+Raw SCADA and raw mast/met-tower tables are not committed. Some figures are rendered from local real intermediate outputs and then published as PNG files so the notebooks can show realistic distributions, fitted curves, monthly errors, and lead-day behavior without exposing source tables.
+
+## Figure Gallery
+
+### Power Curve And Observed Wind
+
+![Observed wind speed distribution](figures/power_curve/actual_wind_distribution_by_turbine.png)
+
+![Daily observed wind speed vs normalized energy](figures/power_curve/actual_daily_wind_energy_scatter.png)
+
+![Actual fitted power curves by turbine](figures/power_curve/actual_power_curve_all_turbines.png)
+
+![Seasonal fitted power curves](figures/power_curve/actual_power_curve_seasonal.png)
+
+### Point Forecast Evaluation
+
+![Baseline MAPE and bias](figures/point_forecast/actual_baseline_mape_bias.png)
+
+![Monthly prediction index](figures/point_forecast/actual_monthly_prediction_index.png)
+
+![Monthly relative error heatmap](figures/point_forecast/actual_monthly_error_heatmap.png)
+
+![Lead-day error and correlation](figures/point_forecast/actual_forecast_lead_day_error.png)
 
 ## Notebook Reading Order
 
