@@ -177,7 +177,8 @@ def create_power_curve_notebook(project_root: Path) -> None:
         code_cell("curve = build_power_curve(cleaned, 0.5, 12)\ncurve.to_csv(PROJECT_ROOT / 'data_sample' / 'sample_power_curve.csv', index=False)\ncurve.head()"),
         markdown_cell("## 5. Fitting Result\n\n下图展示每台风机、每个季节的经验功率曲线。第二个点预测 notebook 会直接读取这个曲线表，把预报风速映射为电量。"),
         code_cell("fig, ax = plt.subplots(figsize=(9, 5))\nfor (turbine_id, season), group in curve.groupby(['turbine_id', 'season']):\n    ax.plot(group['wind_speed_bin'], group['power_kw'], marker='o', label=f'{turbine_id}-{season}')\nax.set_xlabel('Wind speed bin (m/s)')\nax.set_ylabel('Median power (kW)')\nax.set_title('Empirical power curves from cleaned SCADA sample')\nax.legend(fontsize=8)\nfig.tight_layout()"),
-        markdown_cell("## 6. Output\n\n输出文件是 `data_sample/sample_power_curve.csv`，字段为 `turbine_id`、`season`、`wind_speed_bin`、`power_kw`、`sample_count`。它是后续 Baseline 2/3/4 和 AK-D 的风速到功率映射底座。"),
+        markdown_cell("## 6. Actual Public Figures\n\n下面几张图由本地真实中间结果渲染后以 PNG 形式放入仓库。原始 SCADA 和原始风塔/测风文件不上传，但图可以正常展示真实分布和拟合形态。\n\n![Observed wind speed distribution](../figures/power_curve/actual_wind_distribution_by_turbine.png)\n\n这张图先看每台风机的观测风速分布。它用于判断不同风机是否处在相近风况下，也能发现某台风机是否存在明显偏低、偏高或缺测较多的问题。\n\n![Daily observed wind speed vs normalized energy](../figures/power_curve/actual_daily_wind_energy_scatter.png)\n\n这张图把日均观测风速和日真值电量指数放在一起。风速越高，电量指数整体越高，说明功率曲线和月度预测都必须先把风速侧处理稳，否则后面的电量预测会被系统性带偏。\n\n![Actual fitted power curves by turbine](../figures/power_curve/actual_power_curve_all_turbines.png)\n\n这张图展示真实拟合出来的逐机功率曲线。不同风机曲线并不完全重合，所以公开说明里保留逐机拆分，而不是只给一条场站平均曲线。\n\n![Seasonal fitted power curves](../figures/power_curve/actual_power_curve_seasonal.png)\n\n这张图展示分季节曲线和风速 bin 覆盖。季节拆分的意义是把空气密度、运行策略和季节性风况差异吸收进功率曲线，但样本覆盖不足的高风速段需要谨慎解释。"),
+        markdown_cell("## 7. Output\n\n输出文件是 `data_sample/sample_power_curve.csv`，字段为 `turbine_id`、`season`、`wind_speed_bin`、`power_kw`、`sample_count`。它是后续 Baseline 2/3/4 和 AK-D 的风速到功率映射底座。"),
     ]
     write_notebook(project_root / "notebooks" / "01_power_curve_fitting.ipynb", cells)
 
@@ -199,7 +200,8 @@ def create_baseline_notebook(project_root: Path) -> None:
         code_cell("public_metrics = pd.read_csv(PROJECT_ROOT / 'results_public' / 'public_metrics_summary.csv')\npublic_monthly = pd.read_csv(PROJECT_ROOT / 'results_public' / 'public_monthly_predictions_index.csv')\npublic_metrics"),
         code_cell("fig, axes = plt.subplots(1, 2, figsize=(12, 4))\nsns.barplot(data=public_metrics, x='method', y='mape_percent', ax=axes[0])\nsns.barplot(data=public_metrics, x='method', y='bias_percent', ax=axes[1])\nfor axis in axes:\n    axis.tick_params(axis='x', rotation=30)\naxes[0].set_title('Public MAPE by method')\naxes[1].set_title('Public bias by method')\nfig.tight_layout()"),
         code_cell("fig, ax = plt.subplots(figsize=(11, 5))\nsns.lineplot(data=public_monthly, x='month', y='energy_pred_index', hue='method', marker='o', ax=ax)\nsns.lineplot(data=public_monthly.drop_duplicates('month'), x='month', y='energy_true_index', color='black', marker='o', label='Truth index', ax=ax)\nax.tick_params(axis='x', rotation=45)\nax.set_title('Normalized monthly predictions and truth')\nax.set_ylabel('Index, truth-window mean = 1')\nfig.tight_layout()"),
-        markdown_cell("## 7. Conclusion\n\n从真实脱敏结果看，5 条最终点预测基线覆盖了从朴素历史同期、气候库功率曲线、EC45 订正、相似日，到 AK-D 分月订正的完整路线。AK-D 的价值是说明订正系数按月份拆分后，部分极端月份误差会回落；它仍需要关注分月样本少导致的过修正。"),
+        markdown_cell("## 7. Actual Public Figures\n\n下面几张图由真实评估结果和真实中间指标渲染，公开仓库只保留 PNG 与脱敏指标，不保留原始电量表、风塔表或本地路径。\n\n![Baseline MAPE and bias](../figures/point_forecast/actual_baseline_mape_bias.png)\n\nMAPE 反映逐月误差大小，Bias 反映整体高估或低估。Baseline 1/2 是历史类参照，Baseline 3/4 是 EC45 预报驱动路线，AK-D 是分月订正路线。看这张图时不要只看 MAPE，也要看 Bias 是否长期偏一侧。\n\n![Monthly prediction index](../figures/point_forecast/actual_monthly_prediction_index.png)\n\n这张图把真实电量和各方法预测都转成指数。它主要用来观察趋势跟随：某些方法总量偏差不大，但逐月峰谷跟不住；这会在调度或月度经营分析里造成问题。\n\n![Monthly relative error heatmap](../figures/point_forecast/actual_monthly_error_heatmap.png)\n\n热力图用于定位异常月份。颜色连续偏红或偏蓝，说明方法存在系统性偏差；只有个别月份颜色很深，则更可能是风况异常、覆盖不足或该月订正规则不适配。\n\n![Lead-day error and correlation](../figures/point_forecast/actual_forecast_lead_day_error.png)\n\n提前期图只对 Baseline 3/4 展开，因为它们依赖 EC45 起报和提前期。它用来判断预报越远时误差是否放大、相关性是否衰减，也能解释为什么最终月度点预测不能只看单日预报表现。"),
+        markdown_cell("## 8. Conclusion\n\n从真实脱敏结果看，5 条最终点预测基线覆盖了从朴素历史同期、气候库功率曲线、EC45 订正、相似日，到 AK-D 分月订正的完整路线。AK-D 的价值是说明订正系数按月份拆分后，部分极端月份误差会回落；它仍需要关注分月样本少导致的过修正。"),
     ]
     write_notebook(project_root / "notebooks" / "02_point_forecast_baselines.ipynb", cells)
 
@@ -217,6 +219,7 @@ This repository is a public, data-safe walkthrough of wind power monthly point f
 - `src/wind_power_baselines/`: small functional utilities for cleaning, preprocessing, power curve construction, baseline prediction, metrics, and plots.
 - `data_sample/`: synthetic sample data only.
 - `results_public/`: anonymized real evaluation results. Absolute energy values are not published.
+- `figures/`: public-safe PNG figures rendered from sample data, anonymized real metrics, and local real intermediate outputs.
 
 ## Data Safety
 
@@ -231,6 +234,30 @@ Public results use normalized indices and percentages:
 - `pearson_r`
 
 No original kWh/GWh series, local drive paths, credentials, or raw station files are included.
+
+Raw SCADA and raw mast/met-tower tables are not committed. Some figures are rendered from local real intermediate outputs and then published as PNG files so the notebooks can show realistic distributions, fitted curves, monthly errors, and lead-day behavior without exposing source tables.
+
+## Figure Gallery
+
+### Power Curve And Observed Wind
+
+![Observed wind speed distribution](figures/power_curve/actual_wind_distribution_by_turbine.png)
+
+![Daily observed wind speed vs normalized energy](figures/power_curve/actual_daily_wind_energy_scatter.png)
+
+![Actual fitted power curves by turbine](figures/power_curve/actual_power_curve_all_turbines.png)
+
+![Seasonal fitted power curves](figures/power_curve/actual_power_curve_seasonal.png)
+
+### Point Forecast Evaluation
+
+![Baseline MAPE and bias](figures/point_forecast/actual_baseline_mape_bias.png)
+
+![Monthly prediction index](figures/point_forecast/actual_monthly_prediction_index.png)
+
+![Monthly relative error heatmap](figures/point_forecast/actual_monthly_error_heatmap.png)
+
+![Lead-day error and correlation](figures/point_forecast/actual_forecast_lead_day_error.png)
 
 ## Notebook Reading Order
 

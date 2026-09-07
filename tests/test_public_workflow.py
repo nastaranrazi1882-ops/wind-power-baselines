@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import sys
 import unittest
 
@@ -89,6 +90,59 @@ class PublicWorkflowTest(unittest.TestCase):
         self.assertTrue({"mape_percent", "bias_percent", "pearson_r"}.issubset(metrics.columns))
         self.assertTrue({"energy_true_index", "energy_pred_index"}.issubset(public_rows.columns))
         self.assertFalse(public_rows.to_csv(index=False).find(":\\") >= 0)
+
+    def test_public_figure_set_contains_real_result_story_without_raw_data(self) -> None:
+        expected_figure_paths = [
+            PROJECT_ROOT / "figures" / "power_curve" / "actual_wind_distribution_by_turbine.png",
+            PROJECT_ROOT / "figures" / "power_curve" / "actual_daily_wind_energy_scatter.png",
+            PROJECT_ROOT / "figures" / "power_curve" / "actual_power_curve_all_turbines.png",
+            PROJECT_ROOT / "figures" / "power_curve" / "actual_power_curve_seasonal.png",
+            PROJECT_ROOT / "figures" / "point_forecast" / "actual_baseline_mape_bias.png",
+            PROJECT_ROOT / "figures" / "point_forecast" / "actual_monthly_prediction_index.png",
+            PROJECT_ROOT / "figures" / "point_forecast" / "actual_monthly_error_heatmap.png",
+            PROJECT_ROOT / "figures" / "point_forecast" / "actual_forecast_lead_day_error.png",
+        ]
+
+        for figure_path in expected_figure_paths:
+            with self.subTest(figure_path=figure_path):
+                self.assertTrue(figure_path.exists(), f"缺少公开高清图: path={figure_path}")
+                self.assertGreater(figure_path.stat().st_size, 20_000, f"公开图可能未正常生成: path={figure_path}")
+
+        forbidden_suffixes = {".xlsx", ".xls", ".parquet", ".pkl"}
+        committed_files = [path for path in PROJECT_ROOT.rglob("*") if ".git" not in path.parts and path.is_file()]
+        leaked_raw_files = [path for path in committed_files if path.suffix.lower() in forbidden_suffixes]
+
+        self.assertEqual(leaked_raw_files, [])
+
+    def test_notebooks_reference_public_high_resolution_figures(self) -> None:
+        notebook_text = "\n".join(
+            [
+                (PROJECT_ROOT / "notebooks" / "01_power_curve_fitting.ipynb").read_text(encoding="utf-8"),
+                (PROJECT_ROOT / "notebooks" / "02_point_forecast_baselines.ipynb").read_text(encoding="utf-8"),
+            ]
+        )
+        expected_references = [
+            "../figures/power_curve/actual_wind_distribution_by_turbine.png",
+            "../figures/power_curve/actual_daily_wind_energy_scatter.png",
+            "../figures/power_curve/actual_power_curve_all_turbines.png",
+            "../figures/power_curve/actual_power_curve_seasonal.png",
+            "../figures/point_forecast/actual_baseline_mape_bias.png",
+            "../figures/point_forecast/actual_monthly_prediction_index.png",
+            "../figures/point_forecast/actual_monthly_error_heatmap.png",
+            "../figures/point_forecast/actual_forecast_lead_day_error.png",
+        ]
+
+        for reference in expected_references:
+            with self.subTest(reference=reference):
+                self.assertIn(reference, notebook_text)
+
+        for notebook_path in [
+            PROJECT_ROOT / "notebooks" / "01_power_curve_fitting.ipynb",
+            PROJECT_ROOT / "notebooks" / "02_point_forecast_baselines.ipynb",
+        ]:
+            with self.subTest(notebook_path=notebook_path):
+                notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
+                self.assertEqual(notebook["nbformat"], 4)
 
 
 if __name__ == "__main__":
