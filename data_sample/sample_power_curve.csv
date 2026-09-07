@@ -1,0 +1,8 @@
+turbine_id,season,wind_speed_bin,power_kw,sample_count
+T01,winter,4.5,30,1
+T01,winter,5.0,45,1
+T01,winter,6.0,157.5,2
+T02,winter,5.0,49,2
+T02,winter,6.5,205,2
+T03,winter,5.0,52.5,2
+T03,winter,6.5,242.5,2
