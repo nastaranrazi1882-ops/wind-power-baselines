@@ -1,0 +1,6 @@
+method,window_name,month_count,mape_percent,bias_percent,pearson_r
+Baseline 1,method_available_months,7,13.7335,-10.8713,0.8213
+Baseline 2,method_available_months,7,17.8611,-10.5125,0.8126
+Baseline 3,method_available_months,26,15.3872,-4.9496,0.4164
+Baseline 4,method_available_months,31,23.7808,-8.8406,0.1059
+AK-D,method_available_months,19,17.8678,1.5973,0.7426

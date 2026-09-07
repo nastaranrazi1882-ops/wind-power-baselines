@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipython/
+.jupyter_config/
+.jupyter_data/
+.jupyter_runtime/
+
+# Local environments
+.env
+.venv/
+venv/
+*.key
+*.pem
+
+# Raw data
+data/
+raw/
+private/
+*.xlsx
+*.xls
+*.parquet
+*.pkl
+
+# Large/local outputs
+outputs/
+cache/
+*.log
