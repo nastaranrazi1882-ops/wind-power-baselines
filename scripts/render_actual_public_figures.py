@@ -4,6 +4,7 @@ import argparse
 import glob
 from pathlib import Path
 
+import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
@@ -53,11 +54,28 @@ def configure_plot_style() -> None:
     plt.rcParams["legend.fontsize"] = 9
 
 
-def render_wind_distribution(source_root: Path, output_root: Path) -> Path:
+def read_actual_wind_long(source_root: Path) -> pd.DataFrame:
     wind_path = source_root / "baseline3" / "output" / "baseline3_ec45_middle45_timingfix" / "baseline_output" / "_cache_obs_wind_6h_per_turbine.csv"
     wind = read_csv_checked(wind_path, ["time", "turbine_1", "turbine_2", "turbine_3", "turbine_4", "turbine_5", "turbine_6"], "逐机观测风速缓存")
     wind["time"] = pd.to_datetime(wind["time"])
-    wind_long = wind.melt(id_vars="time", var_name="turbine", value_name="wind_speed").dropna()
+    return wind.melt(id_vars="time", var_name="turbine", value_name="wind_speed").dropna()
+
+
+def build_wind_bin_support(wind_data: pd.DataFrame, bin_width: float) -> pd.DataFrame:
+    if "wind_speed" not in wind_data.columns:
+        raise ValueError(f"风速样本表缺少字段: missing=['wind_speed'], columns={list(wind_data.columns)}")
+    if bin_width <= 0:
+        raise ValueError(f"风速分箱宽度必须为正数: bin_width={bin_width}")
+    data = wind_data[["wind_speed"]].copy()
+    data["wind_speed"] = pd.to_numeric(data["wind_speed"], errors="coerce")
+    data = data.dropna(subset=["wind_speed"])
+    data["wind_speed_bin"] = (data["wind_speed"] // bin_width) * bin_width
+    support = data.groupby("wind_speed_bin", as_index=False).size().rename(columns={"size": "sample_count"})
+    return support.sort_values("wind_speed_bin").reset_index(drop=True)
+
+
+def render_wind_distribution(source_root: Path, output_root: Path) -> Path:
+    wind_long = read_actual_wind_long(source_root)
 
     fig, axes = plt.subplots(1, 2, figsize=(13.5, 4.8))
     sns.boxplot(data=wind_long, x="turbine", y="wind_speed", ax=axes[0], color="#78A8D8")
@@ -112,27 +130,46 @@ def read_power_curve_candidates(source_root: Path) -> pd.DataFrame:
     return curves
 
 
+def build_curve_deviation(curves: pd.DataFrame) -> pd.DataFrame:
+    required_columns = ["season", "wind_center", "turbine", "power_index"]
+    missing = [column for column in required_columns if column not in curves.columns]
+    if missing:
+        raise ValueError(f"功率曲线偏差计算缺少字段: missing={missing}, columns={list(curves.columns)}")
+    data = curves[required_columns].copy()
+    median = data.groupby(["season", "wind_center"], as_index=False)["power_index"].median().rename(columns={"power_index": "fleet_median_power_index"})
+    joined = data.merge(median, on=["season", "wind_center"], how="inner")
+    joined["deviation_from_fleet_median"] = joined["power_index"] - joined["fleet_median_power_index"]
+    return joined.sort_values(["season", "turbine", "wind_center"]).reset_index(drop=True)
+
+
 def render_power_curve_all_turbines(curves: pd.DataFrame, output_root: Path) -> Path:
-    fig, ax = plt.subplots(figsize=(9.5, 5.5))
-    sns.lineplot(data=curves, x="wind_center", y="power_index", hue="turbine", style="season", linewidth=2.0, ax=ax)
-    ax.set_title("Actual fitted power curves by turbine")
-    ax.set_xlabel("Wind speed bin center (m/s)")
-    ax.set_ylabel("Power index (turbine max = 1)")
-    ax.set_ylim(-0.03, 1.08)
+    deviation = build_curve_deviation(curves)
+    fig, axes = plt.subplots(1, 2, figsize=(15.0, 5.4))
+    sns.lineplot(data=curves, x="wind_center", y="power_index", hue="turbine", style="season", linewidth=1.8, ax=axes[0])
+    sns.lineplot(data=deviation, x="wind_center", y="deviation_from_fleet_median", hue="turbine", style="season", linewidth=1.5, ax=axes[1], legend=False)
+    axes[0].set_title("Actual fitted power curves by turbine")
+    axes[0].set_xlabel("Wind speed bin center (m/s)")
+    axes[0].set_ylabel("Power index (turbine max = 1)")
+    axes[0].set_ylim(-0.03, 1.08)
+    axes[1].set_title("Deviation from fleet median curve")
+    axes[1].set_xlabel("Wind speed bin center (m/s)")
+    axes[1].set_ylabel("Power index difference")
+    axes[1].axhline(0, color="black", linewidth=0.9)
     return save_figure(fig, output_root / "power_curve" / "actual_power_curve_all_turbines.png")
 
 
-def render_power_curve_seasonal(curves: pd.DataFrame, output_root: Path) -> Path:
+def render_power_curve_seasonal(curves: pd.DataFrame, wind_support: pd.DataFrame, output_root: Path) -> Path:
     seasonal = curves.groupby(["season", "wind_center"], as_index=False).agg(power_index=("power_index", "median"), turbine_count=("fan_id", "nunique"))
     fig, axes = plt.subplots(1, 2, figsize=(13.5, 4.8))
     sns.lineplot(data=seasonal, x="wind_center", y="power_index", hue="season", marker="o", linewidth=2.2, ax=axes[0])
-    sns.barplot(data=seasonal, x="wind_center", y="turbine_count", hue="season", ax=axes[1])
+    sns.barplot(data=wind_support, x="wind_speed_bin", y="sample_count", color="#4C78A8", ax=axes[1])
     axes[0].set_title("Seasonal median fitted power curve")
     axes[0].set_xlabel("Wind speed bin center (m/s)")
     axes[0].set_ylabel("Power index")
-    axes[1].set_title("Turbine coverage by wind-speed bin")
-    axes[1].set_xlabel("Wind speed bin center (m/s)")
-    axes[1].set_ylabel("Turbines with valid curve point")
+    axes[1].set_title("Observed sample count by wind-speed bin")
+    axes[1].set_xlabel("Observed wind speed bin (m/s)")
+    axes[1].set_ylabel("6-hour observation count")
+    axes[1].set_yscale("log")
     axes[1].tick_params(axis="x", rotation=90)
     return save_figure(fig, output_root / "power_curve" / "actual_power_curve_seasonal.png")
 
@@ -157,22 +194,34 @@ def render_metrics(metrics: pd.DataFrame, output_root: Path) -> Path:
 
 
 def render_monthly_index(monthly: pd.DataFrame, output_root: Path) -> Path:
-    plot_data = monthly.copy()
-    plot_data["method"] = pd.Categorical(plot_data["method"], categories=METHOD_ORDER, ordered=True)
+    plot_data = prepare_monthly_plot_data(monthly)
     fig, ax = plt.subplots(figsize=(12.5, 5.5))
-    sns.lineplot(data=plot_data, x="month", y="energy_pred_index", hue="method", marker="o", linewidth=1.8, ax=ax)
-    truth_line = plot_data.drop_duplicates("month").sort_values("month")
-    sns.lineplot(data=truth_line, x="month", y="energy_true_index", color="black", marker="o", linewidth=2.5, label="Truth index", ax=ax)
+    sns.lineplot(data=plot_data, x="month_date", y="energy_pred_index", hue="method", marker="o", linewidth=1.8, ax=ax)
+    truth_line = plot_data.drop_duplicates("month").sort_values("month_date")
+    sns.lineplot(data=truth_line, x="month_date", y="energy_true_index", color="black", marker="o", linewidth=2.5, label="Truth index", ax=ax)
     ax.set_title("Monthly normalized prediction trajectories")
     ax.set_xlabel("Target month")
     ax.set_ylabel("Energy index")
+    ax.xaxis.set_major_locator(mdates.MonthLocator(interval=2))
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
     ax.tick_params(axis="x", rotation=45)
     return save_figure(fig, output_root / "point_forecast" / "actual_monthly_prediction_index.png")
 
 
+def prepare_monthly_plot_data(monthly: pd.DataFrame) -> pd.DataFrame:
+    required_columns = ["method", "month", "energy_true_index", "energy_pred_index", "error_percent"]
+    missing = [column for column in required_columns if column not in monthly.columns]
+    if missing:
+        raise ValueError(f"公开逐月预测表缺少字段: missing={missing}, columns={list(monthly.columns)}")
+    data = monthly[required_columns].copy()
+    data["month"] = pd.PeriodIndex(data["month"].astype(str), freq="M").astype(str)
+    data["month_date"] = pd.PeriodIndex(data["month"], freq="M").to_timestamp()
+    data["method"] = pd.Categorical(data["method"], categories=METHOD_ORDER, ordered=True)
+    return data.sort_values(["month_date", "method"]).reset_index(drop=True)
+
+
 def render_error_heatmap(monthly: pd.DataFrame, output_root: Path) -> Path:
-    plot_data = monthly.copy()
-    plot_data["method"] = pd.Categorical(plot_data["method"], categories=METHOD_ORDER, ordered=True)
+    plot_data = prepare_monthly_plot_data(monthly)
     heatmap_data = plot_data.pivot_table(index="method", columns="month", values="error_percent", observed=False)
     fig, ax = plt.subplots(figsize=(16.0, 6.2))
     sns.heatmap(
@@ -221,12 +270,13 @@ def render_public_figures(source_root: Path, project_root: Path) -> list[Path]:
     metrics = read_csv_checked(project_root / "results_public" / "public_metrics_summary.csv", ["method", "mape_percent", "bias_percent"], "公开指标汇总")
     monthly = read_csv_checked(project_root / "results_public" / "public_monthly_predictions_index.csv", ["method", "month", "energy_true_index", "energy_pred_index", "error_percent"], "公开逐月归一化预测")
     curves = read_power_curve_candidates(source_root)
+    wind_support = build_wind_bin_support(read_actual_wind_long(source_root), 1.0)
 
     return [
         render_wind_distribution(source_root, output_root),
         render_daily_wind_energy(source_root, output_root),
         render_power_curve_all_turbines(curves, output_root),
-        render_power_curve_seasonal(curves, output_root),
+        render_power_curve_seasonal(curves, wind_support, output_root),
         render_metrics(metrics, output_root),
         render_monthly_index(monthly, output_root),
         render_error_heatmap(monthly, output_root),
