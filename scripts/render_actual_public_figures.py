@@ -11,6 +11,7 @@ import seaborn as sns
 
 
 METHOD_ORDER = ["Baseline 1", "Baseline 2", "Baseline 3", "Baseline 4", "AK-D"]
+FINAL_WINDOW_MONTHS = ["2025-07", "2025-08", "2025-09", "2025-10", "2025-11", "2025-12", "2026-01"]
 
 
 def require_file(path: Path, label: str) -> Path:
@@ -199,10 +200,10 @@ def render_monthly_index(monthly: pd.DataFrame, output_root: Path) -> Path:
     sns.lineplot(data=plot_data, x="month_date", y="energy_pred_index", hue="method", marker="o", linewidth=1.8, ax=ax)
     truth_line = plot_data.drop_duplicates("month").sort_values("month_date")
     sns.lineplot(data=truth_line, x="month_date", y="energy_true_index", color="black", marker="o", linewidth=2.5, label="Truth index", ax=ax)
-    ax.set_title("Monthly normalized prediction trajectories")
+    ax.set_title("Monthly normalized prediction trajectories, W1 final window")
     ax.set_xlabel("Target month")
-    ax.set_ylabel("Energy index")
-    ax.xaxis.set_major_locator(mdates.MonthLocator(interval=2))
+    ax.set_ylabel("Energy index, W1 truth mean = 1")
+    ax.xaxis.set_major_locator(mdates.MonthLocator(interval=1))
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
     ax.tick_params(axis="x", rotation=45)
     return save_figure(fig, output_root / "point_forecast" / "actual_monthly_prediction_index.png")
@@ -220,6 +221,23 @@ def prepare_monthly_plot_data(monthly: pd.DataFrame) -> pd.DataFrame:
     return data.sort_values(["month_date", "method"]).reset_index(drop=True)
 
 
+def validate_final_window_months(monthly: pd.DataFrame, expected_months: list[str]) -> None:
+    required_columns = ["method", "month"]
+    missing = [column for column in required_columns if column not in monthly.columns]
+    if missing:
+        raise ValueError(f"公开逐月预测表缺少字段: missing={missing}, columns={list(monthly.columns)}")
+    expected = set(expected_months)
+    problems: list[str] = []
+    for method in METHOD_ORDER:
+        observed = set(monthly.loc[monthly["method"].eq(method), "month"].astype(str))
+        missing_months = sorted(expected - observed)
+        extra_months = sorted(observed - expected)
+        if missing_months or extra_months:
+            problems.append(f"{method}: missing={missing_months}, extra={extra_months}")
+    if problems:
+        raise ValueError(f"最终公开评估图必须使用同一个 W1 月份集合: {'; '.join(problems)}")
+
+
 def render_error_heatmap(monthly: pd.DataFrame, output_root: Path) -> Path:
     plot_data = prepare_monthly_plot_data(monthly)
     heatmap_data = plot_data.pivot_table(index="method", columns="month", values="error_percent", observed=False)
@@ -235,7 +253,7 @@ def render_error_heatmap(monthly: pd.DataFrame, output_root: Path) -> Path:
         cbar_kws={"label": "Error (%)"},
         ax=ax,
     )
-    ax.set_title("Monthly relative error heatmap")
+    ax.set_title("Monthly relative error heatmap, W1 final window")
     ax.set_xlabel("Target month")
     ax.set_ylabel("")
     ax.tick_params(axis="x", rotation=60)
@@ -269,6 +287,7 @@ def render_public_figures(source_root: Path, project_root: Path) -> list[Path]:
     output_root = project_root / "figures"
     metrics = read_csv_checked(project_root / "results_public" / "public_metrics_summary.csv", ["method", "mape_percent", "bias_percent"], "公开指标汇总")
     monthly = read_csv_checked(project_root / "results_public" / "public_monthly_predictions_index.csv", ["method", "month", "energy_true_index", "energy_pred_index", "error_percent"], "公开逐月归一化预测")
+    validate_final_window_months(monthly, FINAL_WINDOW_MONTHS)
     curves = read_power_curve_candidates(source_root)
     wind_support = build_wind_bin_support(read_actual_wind_long(source_root), 1.0)
 

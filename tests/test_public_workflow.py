@@ -13,7 +13,13 @@ from wind_power_baselines.baselines import build_all_baselines
 from wind_power_baselines.evaluation import evaluate_predictions, normalize_public_predictions
 from wind_power_baselines.power_curve import build_power_curve
 from wind_power_baselines.preprocessing import clean_scada, prepare_forecast
-from scripts.render_actual_public_figures import build_curve_deviation, build_wind_bin_support, prepare_monthly_plot_data
+from scripts.render_actual_public_figures import (
+    FINAL_WINDOW_MONTHS,
+    build_curve_deviation,
+    build_wind_bin_support,
+    prepare_monthly_plot_data,
+    validate_final_window_months,
+)
 
 
 class PublicWorkflowTest(unittest.TestCase):
@@ -163,6 +169,34 @@ class PublicWorkflowTest(unittest.TestCase):
         self.assertTrue(prepared["month_date"].is_monotonic_increasing)
         akd_dates = prepared.loc[prepared["method"].eq("AK-D"), "month_date"]
         self.assertTrue(akd_dates.is_monotonic_increasing)
+
+    def test_public_monthly_data_uses_same_final_window_for_each_method(self) -> None:
+        public_monthly = pd.read_csv(PROJECT_ROOT / "results_public" / "public_monthly_predictions_index.csv")
+
+        validate_final_window_months(public_monthly, FINAL_WINDOW_MONTHS)
+        counts = public_monthly.groupby("method")["month"].nunique()
+
+        self.assertEqual(set(counts), {7})
+        self.assertEqual(set(public_monthly["month"].astype(str)), set(FINAL_WINDOW_MONTHS))
+
+    def test_public_metrics_match_final_w1_report_values(self) -> None:
+        metrics = pd.read_csv(PROJECT_ROOT / "results_public" / "public_metrics_summary.csv")
+        expected = pd.DataFrame(
+            {
+                "method": ["Baseline 1", "Baseline 2", "Baseline 3", "Baseline 4", "AK-D"],
+                "month_count": [7, 7, 7, 7, 7],
+                "mape_percent": [13.7335, 17.8611, 23.9285, 21.8996, 14.9095],
+                "bias_percent": [-10.8713, -10.5125, 0.3820, -8.1442, -4.5566],
+                "pearson_r": [0.8213, 0.8126, 0.6370, 0.6357, 0.8837],
+            }
+        )
+
+        joined = metrics.merge(expected, on="method", suffixes=("_actual", "_expected"))
+        self.assertEqual(len(joined), 5)
+        for column in ["month_count", "mape_percent", "bias_percent", "pearson_r"]:
+            with self.subTest(column=column):
+                difference = (joined[f"{column}_actual"] - joined[f"{column}_expected"]).abs().max()
+                self.assertLessEqual(float(difference), 0.0001)
 
     def test_wind_bin_support_uses_observation_counts_not_curve_point_counts(self) -> None:
         raw = pd.DataFrame(
