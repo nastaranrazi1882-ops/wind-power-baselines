@@ -191,6 +191,15 @@ def render_metrics(metrics: pd.DataFrame, output_root: Path) -> Path:
     for axis in axes:
         axis.tick_params(axis="x", rotation=25)
         axis.axhline(0, color="black", linewidth=0.8)
+    for container in axes[0].containers:
+        axes[0].bar_label(container, fmt="%.1f", padding=3, fontsize=8)
+    for container in axes[1].containers:
+        axes[1].bar_label(container, fmt="%+.1f", padding=3, fontsize=8)
+    bias_values = plot_data["bias_percent"].dropna()
+    if not bias_values.empty:
+        lower = min(float(bias_values.min()) - 1.0, -1.0)
+        upper = max(float(bias_values.max()) + 1.0, 1.0)
+        axes[1].set_ylim(lower, upper)
     return save_figure(fig, output_root / "point_forecast" / "actual_baseline_mape_bias.png")
 
 
